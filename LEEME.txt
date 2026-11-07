@@ -1,0 +1,97 @@
+BODYCAM RAID / PROTOTIPO 01
+Proyecto original de entrenamiento policial para PC.
+Unity 6.6 / 6000.6.8f1 / Universal Render Pipeline 17.6.0.
+
+ABRIR Y JUGAR
+1. Extrae TODO el ZIP. No abras los archivos desde la vista comprimida de Windows.
+   Usa una carpeta local, por ejemplo C:\Juegos\BodycamRaid.
+2. En Unity Hub: Proyectos > Agregar (o Abrir / Agregar proyecto desde disco).
+   Selecciona la carpeta BodycamRaid que contiene Assets, Packages y ProjectSettings.
+   No crees otro proyecto ni selecciones solo la carpeta Assets.
+3. Elige el editor 6000.6.8f1 que ya instalaste. Espera a que termine la importacion.
+   La primera apertura puede necesitar Internet para resolver los paquetes oficiales.
+4. El proyecto crea y abre Training.unity automaticamente una sola vez al importar.
+   Si aparece una escena vacia: menu superior Bodycam > Crear escena de entrenamiento.
+   Si la escena ya existe: Bodycam > Abrir entrenamiento.
+5. Pulsa el triangulo Play arriba del editor y haz clic en la pestana Game.
+   El edificio y el jugador se generan al entrar en Play; la escena del editor
+   inicialmente contiene el generador, no cientos de objetos almacenados.
+6. Esc libera el raton y abre los ajustes. Para editar, sal de Play.
+   Los cambios hechos a objetos durante Play no se guardan en la escena.
+
+CONTROLES
+WASD: moverte. Raton: mirar.
+Shift izquierdo: correr (resistencia limitada; se recupera al dejar de correr).
+Ctrl izquierdo: agacharte mientras mantienes la tecla.
+C: activar/desactivar agacharse. No puedes incorporarte bajo un techo bajo.
+Q / E: inclinarte a izquierda/derecha, limitado por las paredes.
+Espacio: saltar; delante de un obstaculo valido, superarlo o treparlo.
+G: abrir/cerrar la puerta que estas mirando de cerca.
+F: linterna.
+F2: comparar imagen con/sin los efectos de lente.
+Tab: mostrar/ocultar ayuda.
+Esc: pausa, sensibilidad, balanceo y movimiento reducido; continuar o salir.
+R: volver a la posicion inicial. No reinicia las puertas ni el reloj de sesion.
+
+RECORRIDO DE PRUEBA
+Apareces frente al pasillo central de un edificio de 28 x 40 metros.
+Avanza hasta la barrera amarilla: acercate, mira al frente y pulsa Espacio.
+Hay seis habitaciones con puertas, tres por cada lado del pasillo.
+Mira una puerta hasta ver el aviso de G para abrirla.
+En la primera habitacion izquierda hay una caja baja y una plataforma de 1.36 m.
+Acercate a su borde con espacio libre por encima y pulsa Espacio para trepar.
+El parkour es contextual: obstaculos de 0.35 a 1.45 m con espacio para el cuerpo.
+No incluye correr por paredes ni agarrarse de cualquier superficie.
+Las puertas frenan su giro si el jugador ocupa su siguiente posicion.
+
+AJUSTAR EL JUEGO / VIBE CODING
+Assets/Bodycam/Scripts/Player/RaidPlayer.cs:
+  velocidad, aceleracion, salto, sensibilidad, postura, inclinacion y parkour.
+Assets/Bodycam/Scripts/Player/RaidAudio.cs:
+  pasos/equipo/aterrizaje sintetizados, sin muestras externas.
+Assets/Bodycam/Scripts/World/RaidWorld.cs:
+  distribucion del edificio, puertas, obstaculos, colores y luces.
+Assets/Bodycam/Scripts/World/RaidDoor.cs:
+  velocidad y angulo de apertura; deteccion del jugador en el giro.
+Assets/Bodycam/Scripts/Presentation/BodycamLens.cs:
+  distorsion de lente, vineta, grano y aberracion cromatica mediante URP.
+Assets/Bodycam/Scripts/Presentation/RaidHUD.cs:
+  interfaz y ajustes de pausa en espanol.
+Assets/Bodycam/Editor/BodycamSetup.cs:
+  genera recursos URP, materiales, escena y configuracion inicial.
+Los ajustes del menu de pausa se aplican a la sesion actual, no se guardan.
+
+ALCANCE REAL DE ESTA ENTREGA
+Es una base de movimiento jugable con entorno geometrico simple.
+No contiene aun armas, sospechosos, companeros, combate, IA ni misiones.
+La camara simula posicion pectoral, balanceo y lente; no incluye cuerpo animado,
+manos, motion matching ni recursos fotorrealistas. Los sonidos son provisionales.
+El acceso completo del chat corresponde al entorno de desarrollo en la nube,
+no al escritorio Windows del usuario.
+
+VERIFICACION
+Revisado: sintaxis C#, referencias entre scripts, estructura del proyecto,
+configuracion de paquetes, APIs URP contra el codigo fuente oficial de Unity
+para la rama 6000.6, y contenido/integridad del ZIP.
+Pendiente: compilacion real en Unity y pruebas de movimiento, imagen, audio y
+rendimiento en tu PC. El entorno donde se preparo no tiene Unity instalado.
+No es un ejecutable .exe ya compilado. Se entrega el proyecto fuente completo.
+
+SI APARECE UN ERROR
+- No hay menu Bodycam: espera la compilacion y abre Window > General > Console.
+  Envia el PRIMER mensaje rojo completo (texto o captura legible).
+- Input incompatible: Edit > Project Settings > Player > Other Settings >
+  Active Input Handling = Input Manager (Old) o Both. Reinicia si Unity lo pide.
+- URP no resuelve: confirma que abriste con 6000.6.8f1 y hay conexion a Internet;
+  no sustituyas arbitrariamente la version de URP por una de Unity 6000.0.
+- Pantalla rosa: comprueba que termino de importar URP y que BodycamPipeline esta
+  asignado en Project Settings > Graphics y en el nivel de Quality activo.
+- Baja fluidez: apaga efectos con F2; reduce el tamano de Game o Render Scale
+  del recurso Assets/Bodycam/Settings/BodycamPipeline.asset, por ejemplo a 0.8.
+- Movimiento incomodo: Esc > Movimiento reducido; baja Movimiento de camara.
+- Raton libre al iniciar: haz clic en Game; Esc permite entrar en pausa.
+
+GENERAR UN .EXE MAS ADELANTE
+File > Build Profiles > Windows > Switch Platform si hace falta > Build.
+Training.unity se agrega a la lista de escenas durante la preparacion inicial.
+Si falta soporte Windows, agregalo desde Unity Hub. Para probar Play no hace falta.

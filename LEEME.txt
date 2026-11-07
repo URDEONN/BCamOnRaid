@@ -1,4 +1,4 @@
-BODYCAM RAID / PROTOTIPO 01
+BODYCAM RAID / PROTOTIPO 02
 Proyecto original de entrenamiento policial para PC.
 Unity 6.6 / 6000.6.8f1 / Universal Render Pipeline 17.6.0.
 
@@ -29,6 +29,7 @@ Espacio: saltar; delante de un obstaculo valido, superarlo o treparlo.
 G: abrir/cerrar la puerta que estas mirando de cerca.
 F: linterna.
 F2: comparar imagen con/sin los efectos de lente.
+F3: mostrar/ocultar cuerpo y manos provisionales.
 Tab: mostrar/ocultar ayuda.
 Esc: pausa, sensibilidad, balanceo y movimiento reducido; continuar o salir.
 R: volver a la posicion inicial. No reinicia las puertas ni el reloj de sesion.
@@ -53,6 +54,8 @@ Assets/Bodycam/Scripts/World/RaidWorld.cs:
   distribucion del edificio, puertas, obstaculos, colores y luces.
 Assets/Bodycam/Scripts/World/RaidDoor.cs:
   velocidad y angulo de apertura; deteccion del jugador en el giro.
+Assets/Bodycam/Scripts/Presentation/OfficerBody.cs:
+  cuerpo, guantes y equipo con animacion procedural provisional.
 Assets/Bodycam/Scripts/Presentation/BodycamLens.cs:
   distorsion de lente, vineta, grano y aberracion cromatica mediante URP.
 Assets/Bodycam/Scripts/Presentation/RaidHUD.cs:
@@ -64,8 +67,9 @@ Los ajustes del menu de pausa se aplican a la sesion actual, no se guardan.
 ALCANCE REAL DE ESTA ENTREGA
 Es una base de movimiento jugable con entorno geometrico simple.
 No contiene aun armas, sospechosos, companeros, combate, IA ni misiones.
-La camara simula posicion pectoral, balanceo y lente; no incluye cuerpo animado,
-manos, motion matching ni recursos fotorrealistas. Los sonidos son provisionales.
+La camara simula posicion pectoral, balanceo y lente. El cuerpo y las manos usan
+piezas geometricas y animacion procedural; no son modelos humanos realistas.
+No incluye alineación de pies con el terreno ni motion matching. Los sonidos son provisionales.
 El acceso completo del chat corresponde al entorno de desarrollo en la nube,
 no al escritorio Windows del usuario.
 
@@ -73,8 +77,9 @@ VERIFICACION
 Revisado: sintaxis C#, referencias entre scripts, estructura del proyecto,
 configuracion de paquetes, APIs URP contra el codigo fuente oficial de Unity
 para la rama 6000.6, y contenido/integridad del ZIP.
-Pendiente: compilacion real en Unity y pruebas de movimiento, imagen, audio y
-rendimiento en tu PC. El entorno donde se preparo no tiene Unity instalado.
+La primera version fue probada por el usuario y funciona.
+Pendiente: compilar y probar esta segunda iteracion en Unity: cuerpo, manos,
+movimiento, imagen, audio y rendimiento. Aqui no hay Unity instalado.
 No es un ejecutable .exe ya compilado. Se entrega el proyecto fuente completo.
 
 SI APARECE UN ERROR
@@ -95,3 +100,6 @@ GENERAR UN .EXE MAS ADELANTE
 File > Build Profiles > Windows > Switch Platform si hace falta > Build.
 Training.unity se agrega a la lista de escenas durante la preparacion inicial.
 Si falta soporte Windows, agregalo desde Unity Hub. Para probar Play no hace falta.
+
+ACTUALIZACION DESDE LA PRIMERA VERSION
+Consulta ACTUALIZAR-02.md: puedes copiar solo Assets/Bodycam/Scripts.

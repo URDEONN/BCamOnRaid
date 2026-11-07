@@ -2,6 +2,12 @@
 
 Prototipo de un juego policial para PC con cámara corporal, movimiento con peso y parkour contextual. Proyecto fuente para **Unity 6.6 (6000.6.8f1)** y **URP 17.6.0**.
 
+## Iteración 02: cuerpo y cámara
+
+Esta rama incorpora un cuerpo provisional visible al mirar hacia abajo, manos con guantes y equipo geométrico con movimiento procedural. Los pasos, la animación de piernas y el balanceo de cámara comparten un ciclo basado en la distancia recorrida; la cámara también responde al aterrizar. **F3** permite comparar con y sin cuerpo/manos.
+
+Si ya probaste la primera versión, sigue `ACTUALIZAR-02.md` para copiar solo los scripts a tu proyecto existente. Esta iteración necesita una nueva prueba dentro de Unity.
+
 ## Descargar y abrir
 
 1. En este repositorio, pulsa **Code → Download ZIP** y extrae el archivo completo en una carpeta local.
@@ -19,6 +25,7 @@ No hace falta crear otro proyecto ni instalar Visual Studio para probarlo. El co
 - Superar obstáculos y trepar superficies válidas de aproximadamente 0,35 a 1,45 m.
 - Cámara a altura del pecho, balanceo, cambios sutiles de campo de visión y comprobaciones de espacio al inclinarse.
 - Distorsión de lente, viñeta, grano y aberración cromática mediante URP.
+- Cuerpo y manos provisionales, con animación procedural al caminar, agacharse y superar obstáculos.
 - Linterna, sonidos provisionales sintetizados y HUD en español.
 - Pausa con sensibilidad, intensidad del movimiento de cámara y modo de movimiento reducido.
 
@@ -35,6 +42,7 @@ No hace falta crear otro proyecto ni instalar Visual Studio para probarlo. El co
 | G | Abrir o cerrar la puerta que estás mirando |
 | F | Linterna |
 | F2 | Activar o desactivar efectos de lente |
+| F3 | Mostrar u ocultar cuerpo y manos |
 | Tab | Mostrar u ocultar controles |
 | Esc | Pausa y ajustes |
 | R | Volver a la posición inicial |
@@ -49,6 +57,7 @@ El código está en `Assets/Bodycam`:
 - `Scripts/Player/RaidAudio.cs`: audio provisional.
 - `Scripts/World/RaidWorld.cs`: distribución, objetos, materiales y luces.
 - `Scripts/World/RaidDoor.cs`: apertura de puertas.
+- `Scripts/Presentation/OfficerBody.cs`: cuerpo, manos y equipo provisionales.
 - `Scripts/Presentation/BodycamLens.cs`: efectos URP.
 - `Scripts/Presentation/RaidHUD.cs`: interfaz y ajustes.
 - `Editor/BodycamSetup.cs`: creación inicial de escena y configuración.
@@ -57,9 +66,9 @@ Los ajustes del menú se aplican a la sesión actual. Los cambios hechos a los o
 
 ## Estado y validación
 
-Es una primera base con geometría simple y recursos originales. Todavía no incluye armas, sospechosos, compañeros, IA, misiones, cuerpo animado ni recursos fotorrealistas. El parkour es contextual; no permite correr por paredes o agarrarse de cualquier superficie.
+Es una base con geometría simple y recursos originales. Todavía no incluye armas, sospechosos, compañeros, IA, misiones ni recursos fotorrealistas. El cuerpo usa piezas geométricas y animación procedural; no incluye un personaje escaneado, animaciones capturadas, alineación de pies con el terreno ni motion matching. El parkour es contextual; no permite correr por paredes o agarrarse de cualquier superficie.
 
-Se revisaron la sintaxis de los siete archivos C#, la integración entre scripts, la estructura del proyecto y las API de configuración de URP contra el código fuente oficial de Unity para la rama `6000.6`. **La compilación y la prueba jugable en Unity están pendientes**: el entorno donde se preparó no dispone del editor.
+La primera versión fue abierta y probada por el usuario, quien confirmó que funcionaba. En esta segunda iteración se revisaron la sintaxis de los ocho archivos C# y la integración entre scripts; la configuración de paquetes y URP mantiene la base anterior. **La compilación y la prueba jugable de esta iteración en Unity están pendientes**: el entorno donde se prepara no dispone del editor.
 
 Si aparecen errores, abre **Window → General → Console** y comparte el primer mensaje rojo completo.
 

@@ -25,17 +25,24 @@ namespace BodycamRaid
         public bool IsVaulting { get; private set; }
         public float Stamina01 { get; private set; } = 1f;
         public float Speed01 { get; private set; }
+        public float GaitPhase { get; private set; }
+        public float GaitWeight { get; private set; }
+        public Vector3 LocalPlanarVelocity { get; private set; }
+        public float TurnRate { get; private set; }
+        public float VaultProgress { get; private set; } = -1f;
+        public bool IsGrounded => motor && motor.enabled && motor.isGrounded;
         public string InteractionPrompt { get; private set; } = "";
         const float StandingHeight = 1.8f;
         const float CrouchingHeight = 1.12f;
         const int WorldMask = ~(1 << 2);
         CharacterController motor;
         RaidAudio sound;
+        OfficerBody officerBody;
         RaidDoor focusedDoor;
         Vector3 planarVelocity;
         Vector3 spawn;
         Quaternion spawnRotation;
-        float verticalVelocity, pitch, yaw, lean, bobPhase, stepDistance;
+        float verticalVelocity, pitch, yaw, lean, landingOffset, landingRecovery;
         float coyote, jumpBuffer, currentRoll, fov = 78f;
         bool crouchToggle, exhausted;
         Coroutine vaultRoutine;
@@ -90,6 +97,8 @@ namespace BodycamRaid
             if (!GetComponent<RaidHUD>()) gameObject.AddComponent<RaidHUD>();
             cameraRig.localPosition = Vector3.up * 1.46f;
             lastPosition = transform.position;
+            officerBody = GetComponent<OfficerBody>();
+            if (!officerBody) officerBody = gameObject.AddComponent<OfficerBody>();
         }
 
         void Start() { SetPaused(false); }
@@ -105,6 +114,12 @@ namespace BodycamRaid
             }
             if (Input.GetKeyDown(KeyCode.R)) { ResetToSpawn(); return; }
             if (Input.GetKeyDown(KeyCode.F)) flashlight.enabled = !flashlight.enabled;
+            if (Input.GetKeyDown(KeyCode.F3) && officerBody)
+            {
+                bool visible = !officerBody.visibleBody;
+                officerBody.visibleBody = visible;
+                officerBody.visibleHands = visible;
+            }
             Look();
             FocusDoor();
             if (Input.GetKeyDown(KeyCode.G) && focusedDoor) focusedDoor.Toggle();
@@ -115,7 +130,10 @@ namespace BodycamRaid
 
         void Look()
         {
-            yaw += Input.GetAxisRaw("Mouse X") * mouseSensitivity;
+            float yawDelta = Input.GetAxisRaw("Mouse X") * mouseSensitivity;
+            yaw += yawDelta;
+            TurnRate = Mathf.Lerp(TurnRate, Mathf.Clamp(yawDelta / Mathf.Max(Time.deltaTime, 0.001f), -540f, 540f),
+                1f - Mathf.Exp(-14f * Time.deltaTime));
             pitch = Mathf.Clamp(pitch - Input.GetAxisRaw("Mouse Y") * mouseSensitivity, -78f, 78f);
             transform.rotation = Quaternion.Euler(0f, yaw, 0f);
         }
@@ -163,18 +181,22 @@ namespace BodycamRaid
             CollisionFlags flags = motor.Move((planarVelocity + Vector3.up * verticalVelocity) * dt);
             if ((flags & CollisionFlags.Above) != 0 && verticalVelocity > 0f) verticalVelocity = 0f;
             if (!grounded && (flags & CollisionFlags.Below) != 0 && fallingVelocity < -4f)
-                sound.Land(Mathf.InverseLerp(4f, 12f, -fallingVelocity));
+            {
+                float strength = Mathf.InverseLerp(4f, 12f, -fallingVelocity);
+                sound.Land(strength);
+                LandingImpulse(strength);
+            }
             Vector3 travelled = transform.position - lastPosition;
             travelled.y = 0f;
             Speed01 = Mathf.Clamp01(travelled.magnitude / Mathf.Max(dt, 0.001f) / runSpeed);
-            if (motor.isGrounded)
+            LocalPlanarVelocity = transform.InverseTransformDirection(travelled / Mathf.Max(dt, 0.001f));
+            if (motor.isGrounded && travelled.sqrMagnitude > 0.000001f)
             {
-                stepDistance += travelled.magnitude;
-                if (stepDistance > (sprint ? 1.65f : 1.35f))
-                {
-                    stepDistance = 0;
+                float stepLength = IsCrouched ? 0.85f : (sprint ? 1.55f : 1.25f);
+                float nextPhase = GaitPhase + travelled.magnitude / stepLength * Mathf.PI;
+                if (Mathf.FloorToInt(nextPhase / Mathf.PI) > Mathf.FloorToInt(GaitPhase / Mathf.PI))
                     sound.Step(IsCrouched ? 0.28f : (sprint ? 0.85f : 0.6f));
-                }
+                GaitPhase = Mathf.Repeat(nextPhase, Mathf.PI * 2f);
             }
             lastPosition = transform.position;
         }
@@ -183,6 +205,8 @@ namespace BodycamRaid
         {
             if (Paused) return;
             float dt = Time.deltaTime;
+            float gaitTarget = IsGrounded && !IsVaulting ? Mathf.Clamp01(Speed01 * 1.8f) : 0f;
+            GaitWeight = Mathf.Lerp(GaitWeight, gaitTarget, 1f - Mathf.Exp(-12f * dt));
             float desiredLean = (Input.GetKey(KeyCode.Q) ? -1f : 0f) + (Input.GetKey(KeyCode.E) ? 1f : 0f);
             if (IsVaulting) desiredLean = 0f;
             float height = Mathf.Lerp(0.91f, 1.46f, Mathf.InverseLerp(CrouchingHeight, StandingHeight, motor.height));
@@ -198,10 +222,11 @@ namespace BodycamRaid
                 WorldMask, QueryTriggerInteraction.Ignore))
                 lean = Mathf.Sign(lean) * Mathf.Min(Mathf.Abs(lean), Mathf.Max(0f, leanHit.distance - 0.07f));
             float motion = reducedMotion ? 0f : cameraMotion;
-            if (motor.isGrounded && !IsVaulting) bobPhase += dt * Mathf.Lerp(0f, 15f, Speed01);
-            float bob = Mathf.Sin(bobPhase * 2f) * 0.018f * Speed01 * motion;
-            float sway = Mathf.Sin(bobPhase) * 0.012f * Speed01 * motion;
-            Vector3 desiredPosition = new Vector3(lean + sway, height + bob, 0.02f);
+            // A contact occurs at phase multiples of PI: image, boots and audio share one gait.
+            float bob = -Mathf.Cos(GaitPhase * 2f) * 0.014f * GaitWeight * motion;
+            float sway = Mathf.Sin(GaitPhase) * 0.013f * GaitWeight * motion;
+            landingOffset = Mathf.SmoothDamp(landingOffset, 0f, ref landingRecovery, 0.14f, 5f, dt);
+            Vector3 desiredPosition = new Vector3(lean + sway, height + bob + landingOffset * motion, 0.02f);
             Vector3 cameraPosition = Vector3.Lerp(cameraRig.localPosition, desiredPosition, 1f - Mathf.Exp(-16f * dt));
             cameraPosition.x = lean + sway; // lean already has its own smoothing and immediate collision clamp
             if (Mathf.Abs(cameraPosition.x) > 0.001f && Physics.SphereCast(leanOrigin, 0.12f,
@@ -209,8 +234,8 @@ namespace BodycamRaid
                 Mathf.Abs(cameraPosition.x) + 0.07f, WorldMask, QueryTriggerInteraction.Ignore))
                 cameraPosition.x = Mathf.Sign(cameraPosition.x) * Mathf.Max(0f, cameraHit.distance - 0.07f);
             cameraRig.localPosition = cameraPosition;
-            float roll = -lean / 0.32f * 11f - Input.GetAxisRaw("Mouse X") * 0.7f * motion;
-            roll += Mathf.Sin(bobPhase) * 0.8f * Speed01 * motion;
+            float roll = -lean / 0.32f * (reducedMotion ? 4f : 11f) - Mathf.Clamp(TurnRate * 0.007f, -2.2f, 2.2f) * motion;
+            roll += Mathf.Sin(GaitPhase) * 0.7f * GaitWeight * motion;
             currentRoll = Mathf.Lerp(currentRoll, roll, 1f - Mathf.Exp(-12f * dt));
             cameraRig.localRotation = Quaternion.Euler(pitch, 0f, currentRoll);
             float targetFov = 78f + (reducedMotion ? 0f : Speed01 * 4f);
@@ -261,6 +286,9 @@ namespace BodycamRaid
         IEnumerator Vault(Vector3 destination, float clearanceY, float duration)
         {
             IsVaulting = true;
+            VaultProgress = 0f;
+            LocalPlanarVelocity = Vector3.zero;
+            Speed01 = 0f;
             motor.enabled = false;
             Vector3 start = transform.position;
             float apex = Mathf.Max(clearanceY, destination.y + 0.15f);
@@ -271,6 +299,7 @@ namespace BodycamRaid
             for (float elapsed = 0f; elapsed < duration; elapsed += Time.deltaTime)
             {
                 float t = elapsed / duration;
+                VaultProgress = t;
                 Vector3 next;
                 if (t < 0.38f)
                     next = Vector3.Lerp(start, new Vector3(start.x, apex, start.z), Mathf.SmoothStep(0f, 1f, t / 0.38f));
@@ -286,9 +315,17 @@ namespace BodycamRaid
             if (!interrupted && CanTraverseTo(destination)) transform.position = destination;
             motor.enabled = true;
             IsVaulting = false;
+            VaultProgress = -1f;
             vaultRoutine = null;
             lastPosition = transform.position;
             sound.Land(0.25f);
+            LandingImpulse(0.25f);
+        }
+
+        void LandingImpulse(float strength)
+        {
+            landingOffset = Mathf.Max(-0.065f, landingOffset - Mathf.Lerp(0.018f, 0.055f, strength));
+            landingRecovery = 0f;
         }
 
         bool CanTraverseTo(Vector3 destination)
@@ -315,13 +352,16 @@ namespace BodycamRaid
             if (vaultRoutine != null) StopCoroutine(vaultRoutine);
             vaultRoutine = null;
             IsVaulting = false;
+            VaultProgress = -1f;
             motor.enabled = false;
             transform.SetPositionAndRotation(spawn, spawnRotation);
             motor.height = StandingHeight;
             motor.center = Vector3.up * StandingHeight * 0.5f;
             motor.enabled = true;
             yaw = spawnRotation.eulerAngles.y;
-            pitch = lean = currentRoll = verticalVelocity = stepDistance = Speed01 = 0f;
+            pitch = lean = currentRoll = verticalVelocity = Speed01 = 0f;
+            GaitPhase = GaitWeight = TurnRate = landingOffset = landingRecovery = 0f;
+            LocalPlanarVelocity = Vector3.zero;
             planarVelocity = Vector3.zero;
             crouchToggle = IsCrouched = exhausted = false;
             Stamina01 = 1f;

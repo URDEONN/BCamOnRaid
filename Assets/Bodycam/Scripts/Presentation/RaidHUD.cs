@@ -67,7 +67,7 @@ namespace BodycamRaid
 
                 Box(new Rect(margin, margin, 4, 67), accent);
                 GUI.Label(new Rect(margin + 18, margin - 5, 440, 30), "UNIDAD 07 / ENTRENAMIENTO", label);
-                GUI.Label(new Rect(margin + 18, margin + 25, 440, 25), "BODYCAM   ·   PROTOTIPO 01", small);
+                GUI.Label(new Rect(margin + 18, margin + 25, 440, 25), "BODYCAM   ·   PROTOTIPO 02", small);
                 bool blink = Mathf.Repeat(Time.unscaledTime, 1.4f) < 1;
                 if (blink) Box(new Rect(width - 278, margin + 9, 9, 9), new Color(.93f, .25f, .21f));
                 GUI.Label(new Rect(width - 259, margin - 1, 70, 27), "REC", label);
@@ -99,7 +99,7 @@ namespace BodycamRaid
 
                 if (showControls && !player.Paused)
                 {
-                    Rect panel = new Rect(width - 376, height - 414, 342, 306);
+                    Rect panel = new Rect(width - 376, height - 437, 342, 329);
                     Box(panel, new Color(.025f, .045f, .05f, .84f));
                     Box(new Rect(panel.x, panel.y, 342, 2), accent);
                     GUI.Label(new Rect(panel.x + 18, panel.y + 13, 310, 28), "CONTROLES", label);
@@ -107,7 +107,7 @@ namespace BodycamRaid
                         "W A S D      Moverte", "RATÓN        Mirar", "SHIFT        Correr",
                         "CTRL / C     Agacharte (mantener / alternar)", "Q / E        Inclinarte (mantener)",
                         "ESPACIO      Saltar / superar obstáculo", "G            Abrir / cerrar puerta",
-                        "F            Linterna", "F2           Efectos de lente", "R            Volver al inicio"
+                        "F            Linterna", "F2           Efectos de lente", "F3           Cuerpo y manos", "R            Volver al inicio"
                     };
                     for (int i = 0; i < rows.Length; i++)
                         GUI.Label(new Rect(panel.x + 18, panel.y + 47 + i * 23, 312, 23), rows[i], small);

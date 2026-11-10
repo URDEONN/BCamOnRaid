@@ -23,3 +23,6 @@ SOFTWARE.
 This license applies to the original scripts and documentation in this ZIP.
 Unity Editor and official Unity packages are not included and have their own
 licenses. The Unity package manager resolves the required official packages.
+
+Supplied models, textures, animations and original Reference files retain their
+original licenses. The MIT scope above does not relicense external assets.

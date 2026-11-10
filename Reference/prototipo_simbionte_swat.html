@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prototipo 3D: Simbionte vs SWAT (Deformación + Paredes + Posesión)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { overflow: hidden; background: #06080d; font-family: 'Segoe UI', system-ui, sans-serif; color: #e2e8f0; }
+    #hud {
+      position: fixed; top: 16px; left: 16px; z-index: 10;
+      background: rgba(9, 13, 22, 0.85); border: 1px solid rgba(56, 189, 248, 0.3);
+      backdrop-filter: blur(8px); padding: 14px 18px; border-radius: 12px;
+      max-width: 370px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    #hud h1 { font-size: 16px; color: #38bdf8; margin-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
+    .mode-badge {
+      display: inline-block; padding: 4px 10px; border-radius: 6px; font-weight: 700;
+      font-size: 12px; margin-bottom: 10px; background: #0284c7; color: #fff;
+    }
+    .mode-badge.possessed { background: #7c3aed; box-shadow: 0 0 12px #7c3aed; }
+    .stat-bar { width: 100%; height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; margin: 4px 0 10px; }
+    .stat-fill { height: 100%; background: linear-gradient(90deg, #06b6d4, #3b82f6); width: 100%; transition: width 0.15s; }
+    .controls { font-size: 12.5px; line-height: 1.55; color: #cbd5e1; }
+    .controls kbd {
+      background: #1e293b; border: 1px solid #475569; border-radius: 4px;
+      padding: 1px 6px; font-size: 11px; color: #38bdf8; font-weight: 600;
+    }
+    #prompt {
+      position: fixed; bottom: 22%; left: 50%; transform: translateX(-50%);
+      background: rgba(124, 58, 237, 0.9); border: 1px solid #c084fc;
+      padding: 10px 22px; border-radius: 999px; font-weight: 700; font-size: 15px;
+      color: #fff; display: none; box-shadow: 0 0 25px rgba(124, 58, 237, 0.8);
+      pointer-events: none;
+    }
+    #crosshair {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 18px; height: 18px; border: 2px solid rgba(56, 189, 248, 0.65);
+      border-radius: 50%; pointer-events: none;
+    }
+    #crosshair::after {
+      content: ''; position: absolute; top: 50%; left: 50%;
+      width: 4px; height: 4px; background: #38bdf8; border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h1>Prototipo: Simbionte vs SWAT</h1>
+    <div id="modeBadge" class="mode-badge">ESTADO: MASA SIMBIÓTICA (TREPA PAREDES)</div>
+    <div style="font-size:12px;">Biomasa / Blindaje del Huésped: <span id="hpText">100%</span></div>
+    <div class="stat-bar"><div id="hpFill" class="stat-fill"></div></div>
+    <div class="controls">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Moverse (Suelo, Paredes y Pilares)</div>
+      <div><kbd>Shift</kbd> Impulso viscoso / Sprint</div>
+      <div><kbd>E</kbd> <b>Poseer SWAT cercano</b> / Salir del cuerpo</div>
+      <div><kbd>Click Izq</kbd> Disparar Rifle Simbiótico (en SWAT)</div>
+      <div><kbd>Q</kbd> / <kbd>Click Der</kbd> Látigo de Tentáculo Letal</div>
+      <div><kbd>F</kbd> Explosión Radial de Biomasa 360°</div>
+    </div>
+  </div>
+  <div id="prompt">Presiona [E] para POSEER al Operario SWAT</div>
+  <div id="crosshair"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070a10);
+    scene.fog = new THREE.FogExp2(0x070a10, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 150);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // Luces tácticas
+    const ambient = new THREE.AmbientLight(0x334155, 1.3);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0x93c5fd, 2.2);
+    dirLight.position.set(12, 24, 10);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // Arena táctica con paredes y columnas trepables
+    const climbableMeshes = [];
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7, metalness: 0.2 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8, metalness: 0.1 });
+
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(50, 1, 50), floorMat);
+    floor.position.y = -0.5;
+    floor.receiveShadow = true;
+    scene.add(floor);
+    climbableMeshes.push(floor);
+
+    const grid = new THREE.GridHelper(50, 50, 0x1e3a8a, 0x1e293b);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    function addWall(x, y, z, w, h, d) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+      climbableMeshes.push(m);
+    }
+
+    // Paredes perimetrales y pilares tácticos para trepar con el simbionte
+    addWall(0, 4, -18, 36, 8, 1.5);
+    addWall(-18, 4, 0, 1.5, 8, 36);
+    addWall(18, 4, 0, 1.5, 8, 36);
+    addWall(-7, 3.5, -6, 3.5, 7, 3.5);
+    addWall(7, 3.5, -6, 3.5, 7, 3.5);
+    addWall(0, 2.2, 5, 8, 4.4, 2.5);
+    addWall(0, 7.5, -12, 16, 1.0, 12); // Techo parcial trepable
+
+    // =========================================================================
+    // 1. SIMBIONTE DEFORMABLE + TENTÁCULOS PROCEDURALES CON AGARRE RAYCAST
+    // =========================================================================
+    const symbioteGroup = new THREE.Group();
+    symbioteGroup.position.set(0, 0.45, 10);
+    scene.add(symbioteGroup);
+
+    const symbioteMat = new THREE.MeshPhysicalMaterial({
+      color: 0x05070b,
+      roughness: 0.08,
+      metalness: 0.25,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
+      emissive: 0x081426,
+      emissiveIntensity: 0.5
+    });
+
+    const coreGeo = new THREE.IcosahedronGeometry(0.52, 4);
+    const basePositions = coreGeo.attributes.position.array.slice();
+    const symbioteCoreMesh = new THREE.Mesh(coreGeo, symbioteMat);
+    symbioteCoreMesh.castShadow = true;
+    symbioteGroup.add(symbioteCoreMesh);
+
+    // 10 Tentáculos procedurales que se anclan al suelo y paredes
+    const numTentacles = 10;
+    const tentacles = [];
+    for (let i = 0; i < numTentacles; i++) {
+      const curvePts = Array.from({ length: 10 }, () => new THREE.Vector3());
+      const geo = new THREE.BufferGeometry().setFromPoints(curvePts);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x0f172a, linewidth: 3 });
+      // Usamos malla tubular ligera para cada tentáculo
+      const segs = 8;
+      const tubeGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0.5), new THREE.Vector3(0,0,1)
+      ]), segs, 0.07, 5, false);
+      const mesh = new THREE.Mesh(tubeGeo, symbioteMat);
+      scene.add(mesh);
+
+      const angle = (i / numTentacles) * Math.PI * 2;
+      tentacles.push({
+        mesh,
+        angle,
+        anchor: symbioteGroup.position.clone().add(new THREE.Vector3(Math.cos(angle)*0.9, -0.3, Math.sin(angle)*0.9)),
+        targetAnchor: symbioteGroup.position.clone(),
+        lerp: 1.0
+      });
+    }
+
+    // =========================================================================
+    // 2. ESCUADRÓN SWAT (Carga Soldier_Animated.glb / Swat.glb o fallback)
+    // =========================================================================
+    const swatUnits = [];
+    const loader = new GLTFLoader();
+
+    function createProceduralSwatMesh() {
+      const g = new THREE.Group();
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e3a5f, roughness: 0.6 });
+      const vestMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.5 });
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.75, 6, 12), bodyMat);
+      torso.position.y = 1.05;
+      const vest = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.65, 0.45), vestMat);
+      vest.position.y = 1.15;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 16), vestMat);
+      head.position.y = 1.78;
+      const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.85), vestMat);
+      rifle.position.set(0.28, 1.15, 0.35);
+      g.add(torso, vest, head, rifle);
+      return g;
+    }
+
+    function spawnSwatUnit(x, z, templateGltf) {
+      const root = new THREE.Group();
+      root.position.set(x, 0, z);
+      scene.add(root);
+
+      let model;
+      let mixer = null;
+      if (templateGltf) {
+        model = SkeletonUtils.clone(templateGltf.scene);
+        model.scale.set(1, 1, 1);
+        model.traverse(c => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.material = c.material.clone();
+          }
+        });
+        if (templateGltf.animations && templateGltf.animations.length > 0) {
+          mixer = new THREE.AnimationMixer(model);
+          const action = mixer.clipAction(templateGltf.animations[0]);
+          action.play();
+        }
+      } else {
+        model = createProceduralSwatMesh();
+      }
+      root.add(model);
+
+      // Aura/tentáculos dorsales cuando está poseído
+      const backTendrils = new THREE.Group();
+      backTendrils.position.set(0, 1.25, -0.15);
+      backTendrils.visible = false;
+      for (let k = 0; k < 4; k++) {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.9, 6), symbioteMat);
+        spike.rotation.x = -Math.PI * 0.35 + (k - 1.5) * 0.25;
+        spike.rotation.z = (k - 1.5) * 0.4;
+        backTendrils.add(spike);
+      }
+      root.add(backTendrils);
+
+      swatUnits.push({
+        root,
+        model,
+        mixer,
+        backTendrils,
+        hp: 100,
+        patrolOrigin: new THREE.Vector3(x, 0, z),
+        patrolPhase: Math.random() * Math.PI * 2,
+        shootCooldown: 1.5 + Math.random()
+      });
+    }
+
+    const swatPositions = [
+      [-6, 2], [6, 2], [-10, -10], [10, -10], [0, -11]
+    ];
+
+    loader.load('./Soldier_Animated.glb', (gltf) => {
+      swatPositions.forEach(([x, z]) => spawnSwatUnit(x, z, gltf));
+    }, undefined, () => {
+      swatPositions.forEach(([x, z]) => spawnSwatUnit(x, z, null));
+    });
+
+    // =========================================================================
+    // 3. CONTROLES, FÍSICA DE PAREDES 360° Y SISTEMA DE POSESIÓN
+    // =========================================================================
+    const keys = {};
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'KeyE') handlePossessOrEject();
+      if (e.code === 'KeyQ') triggerTendrilWhip();
+      if (e.code === 'KeyF') triggerRadialBiomassBurst();
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.addEventListener('mousedown', e => {
+      if (e.button === 0 && possessedSwat) firePossessedRifle();
+      if (e.button === 2) triggerTendrilWhip();
+    });
+    window.addEventListener('contextmenu', e => e.preventDefault());
+
+    let possessedSwat = null;
+    let currentSurfaceNormal = new THREE.Vector3(0, 1, 0);
+    const velocity = new THREE.Vector3();
+    const raycaster = new THREE.Raycaster();
+    const activeFX = [];
+
+    const modeBadge = document.getElementById('modeBadge');
+    const promptEl = document.getElementById('prompt');
+    const hpFill = document.getElementById('hpFill');
+    const hpText = document.getElementById('hpText');
+
+    function findClosestSwat(fromPos, maxDist) {
+      let best = null;
+      let bestD = maxDist;
+      for (const u of swatUnits) {
+        if (u.hp <= 0 || u === possessedSwat) continue;
+        const d = fromPos.distanceTo(u.root.position);
+        if (d < bestD) { bestD = d; best = u; }
+      }
+      return best;
+    }
+
+    function handlePossessOrEject() {
+      if (possessedSwat) {
+        // Salir del cuerpo del SWAT y volver a forma de masa simbiótica
+        symbioteGroup.position.copy(possessedSwat.root.position).add(new THREE.Vector3(0, 1.4, 0));
+        possessedSwat.backTendrils.visible = false;
+        possessedSwat.model.scale.set(1, 1, 1);
+        possessedSwat = null;
+        symbioteGroup.visible = true;
+        tentacles.forEach(t => t.mesh.visible = true);
+        modeBadge.textContent = 'ESTADO: MASA SIMBIÓTICA (TREPA PAREDES)';
+        modeBadge.classList.remove('possessed');
+        return;
+      }
+
+      const target = findClosestSwat(symbioteGroup.position, 4.2);
+      if (target) {
+        possessedSwat = target;
+        possessedSwat.hp = 150; // Buff de biomasa al poseer
+        possessedSwat.backTendrils.visible = true;
+        // Inflar ligeramente el cuerpo del SWAT poseído y teñirlo con el simbionte
+        possessedSwat.model.scale.set(1.12, 1.08, 1.12);
+        possessedSwat.model.traverse(c => {
+          if (c.isMesh && c.material) {
+            c.material.color.setHex(0x111827);
+            c.material.emissive = new THREE.Color(0x1e1b4b);
+          }
+        });
+        symbioteGroup.visible = false;
+        tentacles.forEach(t => t.mesh.visible = false);
+        modeBadge.textContent = 'ESTADO: SWAT POSEÍDO (HABILIDADES ACTIVAS)';
+        modeBadge.classList.add('possessed');
+        promptEl.style.display = 'none';
+      }
+    }
+
+    function spawnBeamFX(start, end, colorHex, duration = 0.18) {
+      const curve = new THREE.LineCurve3(start.clone(), end.clone());
+      const geo = new THREE.TubeGeometry(curve, 8, 0.08, 6, false);
+      const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+      activeFX.push({ mesh, timer: duration });
+    }
+
+    function firePossessedRifle() {
+      if (!possessedSwat) return;
+      const origin = possessedSwat.root.position.clone().add(new THREE.Vector3(0, 1.3, 0));
+      const target = findClosestSwat(origin, 22);
+      const end = target
+        ? target.root.position.clone().add(new THREE.Vector3(0, 1.1, 0))
+        : origin.clone().add(new THREE.Vector3(0, 0, -14));
+
+      spawnBeamFX(origin, end, 0x38bdf8, 0.1);
+      if (target) {
+        target.hp -= 35;
+        if (target.hp <= 0) target.root.visible = false;
+      }
+    }
+
+    function triggerTendrilWhip() {
+      const origin = possessedSwat
+        ? possessedSwat.root.position.clone().add(new THREE.Vector3(0, 1.25, 0))
+        : symbioteGroup.position.clone();
+      const target = findClosestSwat(origin, 14);
+      if (target) {
+        const hitPos = target.root.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+        spawnBeamFX(origin, hitPos, 0x9333ea, 0.25);
+        target.hp -= 75;
+        // Atraer al SWAT hacia el simbionte
+        target.root.position.lerp(origin, 0.45);
+        if (target.hp <= 0) target.root.visible = false;
+      }
+    }
+
+    function triggerRadialBiomassBurst() {
+      const origin = possessedSwat
+        ? possessedSwat.root.position.clone().add(new THREE.Vector3(0, 1.1, 0))
+        : symbioteGroup.position.clone();
+
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const tip = origin.clone().add(new THREE.Vector3(Math.cos(a) * 6.5, 0.4, Math.sin(a) * 6.5));
+        spawnBeamFX(origin, tip, 0x7c3aed, 0.28);
+      }
+      for (const u of swatUnits) {
+        if (u !== possessedSwat && u.hp > 0 && u.root.position.distanceTo(origin) < 7.0) {
+          u.hp -= 100;
+          u.root.visible = false;
+        }
+      }
+    }
+
+    // Raycast 360° para pegar el simbionte a suelos, paredes y pilares
+    const sampleDirs = [
+      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 1, 0)
+    ];
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.getElapsedTime();
+
+      const moveZ = (keys['KeyW'] || keys['ArrowUp'] ? -1 : 0) + (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
+      const moveX = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) + (keys['KeyA'] || keys['ArrowLeft'] ? -1 : 0);
+      const isSprint = keys['ShiftLeft'] || keys['ShiftRight'];
+
+      if (!possessedSwat) {
+        // 1. Detectar paredes/suelos cercanos para permitir trepar paredes y pilares
+        let closestDist = 999;
+        let bestNormal = new THREE.Vector3(0, 1, 0);
+        let bestHitPoint = null;
+
+        for (const dir of sampleDirs) {
+          raycaster.set(symbioteGroup.position, dir);
+          raycaster.far = 1.65;
+          const hits = raycaster.intersectObjects(climbableMeshes, false);
+          if (hits.length > 0 && hits[0].distance < closestDist) {
+            closestDist = hits[0].distance;
+            bestNormal.copy(hits[0].face.normal).transformDirection(hits[0].object.matrixWorld);
+            bestHitPoint = hits[0].point;
+          }
+        }
+        currentSurfaceNormal.lerp(bestNormal, dt * 10).normalize();
+
+        // Si estamos frente a una pared y presionamos avanzar hacia ella, subir por la pared
+        const speed = (isSprint ? 10.5 : 6.8);
+        const inputVec = new THREE.Vector3(moveX, 0, moveZ);
+        if (inputVec.lengthSq() > 0) {
+          inputVec.normalize();
+          // Si hay una pared vertical pegada, convertir el empuje horizontal en ascenso vertical por la pared
+          if (Math.abs(currentSurfaceNormal.y) < 0.4) {
+            inputVec.y = -moveZ * 0.95;
+          }
+          velocity.copy(inputVec).multiplyScalar(speed);
+          symbioteGroup.position.addScaledVector(velocity, dt);
+        } else {
+          velocity.multiplyScalar(0.85);
+        }
+
+        // Mantener adherido a la superficie (suelo o pared)
+        if (bestHitPoint) {
+          const targetPos = bestHitPoint.clone().addScaledVector(currentSurfaceNormal, 0.42);
+          symbioteGroup.position.lerp(targetPos, dt * 14);
+        } else if (symbioteGroup.position.y > 0.45) {
+          symbioteGroup.position.y = Math.max(0.45, symbioteGroup.position.y - 9.8 * dt);
+        }
+
+        // 2. Deformación procedural en tiempo real de los vértices del núcleo (Slime/Venom)
+        const posAttr = coreGeo.attributes.position;
+        for (let i = 0; i < posAttr.count; i++) {
+          const bx = basePositions[i * 3];
+          const by = basePositions[i * 3 + 1];
+          const bz = basePositions[i * 3 + 2];
+
+          const wave = Math.sin(bx * 6 + elapsed * 6) * Math.cos(by * 6 - elapsed * 5) * Math.sin(bz * 6 + elapsed * 4);
+          let px = bx * (1 + wave * 0.14);
+          let py = by * (1 + wave * 0.14);
+          let pz = bz * (1 + wave * 0.14);
+
+          // Aplastar contra la superficie actual (suelo o pared)
+          const dotN = px * currentSurfaceNormal.x + py * currentSurfaceNormal.y + pz * currentSurfaceNormal.z;
+          if (dotN < 0) {
+            px -= currentSurfaceNormal.x * dotN * 0.45;
+            py -= currentSurfaceNormal.y * dotN * 0.45;
+            pz -= currentSurfaceNormal.z * dotN * 0.45;
+          }
+          posAttr.setXYZ(i, px, py, pz);
+        }
+        posAttr.needsUpdate = true;
+        coreGeo.computeVertexNormals();
+
+        // 3. Actualizar tentáculos que buscan agarres en el suelo y paredes
+        tentacles.forEach((t, idx) => {
+          const dist = t.anchor.distanceTo(symbioteGroup.position);
+          if (dist > 2.1) {
+            const rayDir = new THREE.Vector3(
+              Math.cos(t.angle) + velocity.x * 0.12,
+              -0.5 + velocity.y * 0.12,
+              Math.sin(t.angle) + velocity.z * 0.12
+            ).normalize();
+            raycaster.set(symbioteGroup.position, rayDir);
+            raycaster.far = 2.6;
+            const hits = raycaster.intersectObjects(climbableMeshes, false);
+            if (hits.length > 0) {
+              t.targetAnchor.copy(hits[0].point);
+            } else {
+              t.targetAnchor.copy(symbioteGroup.position).addScaledVector(rayDir, 1.5);
+              t.targetAnchor.y = Math.max(0.05, t.targetAnchor.y);
+            }
+          }
+          t.anchor.lerp(t.targetAnchor, dt * 12);
+
+          const start = symbioteGroup.position.clone();
+          const mid = start.clone().lerp(t.anchor, 0.5).addScaledVector(currentSurfaceNormal, 0.35);
+          mid.x += Math.sin(elapsed * 8 + idx) * 0.14;
+          const curve = new THREE.QuadraticBezierCurve3(start, mid, t.anchor);
+          t.mesh.geometry.dispose();
+          t.mesh.geometry = new THREE.TubeGeometry(curve, 7, 0.055, 5, false);
+        });
+
+        // Mostrar aviso de posesión si hay un SWAT cerca
+        const nearSwat = findClosestSwat(symbioteGroup.position, 4.2);
+        promptEl.style.display = nearSwat ? 'block' : 'none';
+
+        // Cámara persiguiendo al simbionte
+        const camTarget = symbioteGroup.position.clone().add(new THREE.Vector3(0, 4.2, 7.5));
+        camera.position.lerp(camTarget, dt * 6);
+        camera.lookAt(symbioteGroup.position);
+      } else {
+        // MODO SWAT POSEÍDO
+        const speed = isSprint ? 9.5 : 6.2;
+        const moveVec = new THREE.Vector3(moveX, 0, moveZ);
+        if (moveVec.lengthSq() > 0) {
+          moveVec.normalize();
+          possessedSwat.root.position.addScaledVector(moveVec, speed * dt);
+          possessedSwat.root.rotation.y = Math.atan2(moveVec.x, moveVec.z);
+        }
+
+        const camTarget = possessedSwat.root.position.clone().add(new THREE.Vector3(0, 4.8, 8.2));
+        camera.position.lerp(camTarget, dt * 6);
+        camera.lookAt(possessedSwat.root.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+
+        hpFill.style.width = `${Math.max(0, Math.min(100, (possessedSwat.hp / 150) * 100))}%`;
+        hpText.textContent = `${Math.round(possessedSwat.hp)} HP`;
+      }
+
+      // Actualizar patrulla y disparo de los SWAT enemigos
+      const playerPos = possessedSwat ? possessedSwat.root.position : symbioteGroup.position;
+      for (const u of swatUnits) {
+        if (u.hp <= 0) continue;
+        if (u.mixer) u.mixer.update(dt);
+        if (u === possessedSwat) continue;
+
+        const d = u.root.position.distanceTo(playerPos);
+        if (d < 13) {
+          // Apuntar al simbionte o al SWAT poseído
+          u.root.lookAt(playerPos.x, u.root.position.y, playerPos.z);
+          u.shootCooldown -= dt;
+          if (u.shootCooldown <= 0) {
+            u.shootCooldown = 1.4;
+            const muzzle = u.root.position.clone().add(new THREE.Vector3(0, 1.3, 0));
+            spawnBeamFX(muzzle, playerPos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xfacc15, 0.08);
+            if (possessedSwat) {
+              possessedSwat.hp -= 12;
+              if (possessedSwat.hp <= 0) handlePossessOrEject();
+            }
+          }
+        } else {
+          u.patrolPhase += dt * 1.2;
+          u.root.position.x = u.patrolOrigin.x + Math.sin(u.patrolPhase) * 2.5;
+        }
+      }
+
+      // Limpiar efectos visuales temporales
+      for (let i = activeFX.length - 1; i >= 0; i--) {
+        activeFX[i].timer -= dt;
+        if (activeFX[i].timer <= 0) {
+          scene.remove(activeFX[i].mesh);
+          activeFX[i].mesh.geometry.dispose();
+          activeFX.splice(i, 1);
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
